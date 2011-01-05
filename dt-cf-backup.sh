@@ -16,15 +16,20 @@
 # You should have received a copy of the GNU General Public License along with
 # this program.  If not, see <http://www.gnu.org/licenses/>.
 #
-# MORE ABOUT THIS SCRIPT AVAILABLE IN THE README AND AT:
+# MORE ABOUT THE ORIGINAL SCRIPT AVAILABLE IN THE README AND AT:
 #
 # http://damontimm.com/code/dt-s3-backup
 #
 # ---------------------------------------------------------------------------- #
 
-# AMAZON S3 INFORMATION
-export AWS_ACCESS_KEY_ID="foobar_aws_key_id"
-export AWS_SECRET_ACCESS_KEY="foobar_aws_access_key"
+# Rackspace CloudFiles INFORMATION
+export CLOUDFILES_USERNAME=""
+export CLOUDFILES_APIKEY=""
+
+# By default it use the Rackspace Cloud Files located in the US, you
+# can uncomment the next line to use Rackspace Cloud in UK or specify
+# a custom one if you have a OpenStack swift instance.
+# export CLOUDFILES_AUTHURL=https://lon.auth.api.rackspacecloud.com/
 
 # If you aren't running this from a cron, comment this line out
 # and duplicity should prompt you for your password.
@@ -36,18 +41,16 @@ GPG_KEY="foobar_gpg_key"
 # The ROOT of your backup (where you want the backup to start);
 # This can be / or somwhere else -- I use /home/ because all the 
 # directories start with /home/ that I want to backup.
-ROOT="/home/"
+ROOT=""
 
 # BACKUP DESTINATION INFORMATION
-# In my case, I use Amazon S3 use this - so I made up a unique
-# bucket name (you don't have to have one created, it will do it
-# for you).  If you don't want to use Amazon S3, you can backup 
+# In my case, I use Rackspace CloudFiles - so I made up a unique
+# container name (you don't have to have one created, it will do it
+# for you).  If you don't want to use Rackspace CloudFiles, you can backup 
 # to a file or any of duplicity's supported outputs.
 #
-# NOTE: You do need to keep the "s3+http://<your location>/" format
-# even though duplicity supports "s3://<your location>/".
-#DEST="s3+http://backup-bucket/backup-folder/"
-DEST="file:///home/foobar_user_name/new-backup-test/"
+#DEST="cf+http://backupcontainer"
+#DEST="file:///home/foobar_user_name/new-backup-test/"
 
 # INCLUDE LIST OF DIRECTORIES
 # Here is a list of directories to include; if you want to include 
@@ -58,7 +61,7 @@ DEST="file:///home/foobar_user_name/new-backup-test/"
 #	      "/home/www/mysql-backups" \
 #        ) 
 
-INCLIST=( "/home/foobar_user_name/Documents/Prose/" ) # small dir for testing
+# INCLIST=( "/home/foobar_user_name/Documents/Prose/" ) # small dir for testing
 
 # EXCLUDE LIST OF DIRECTORIES
 # Even though I am being specific about what I want to include, 
@@ -68,12 +71,11 @@ EXCLIST=( "/home/*/Trash" \
 	      "/**.DS_Store" "/**Icon?" "/**.AppleDouble" \ 
            ) 
 
-# STATIC BACKUP OPTIONS
-# Here you can define the static backup options that you want to run with
-# duplicity.  I use both the `--full-if-older-than` option plus the
-# `--s3-use-new-style` option (for European buckets).  Be sure to separate your
-# options with appropriate spacing.
-STATIC_OPTIONS="--full-if-older-than 14D --s3-use-new-style"
+# STATIC BACKUP OPTIONS Here you can define the static backup options
+# that you want to run with duplicity.  I use the
+# `--full-if-older-than` option.  Be sure to separate your options
+# with appropriate spacing.
+STATIC_OPTIONS="--full-if-older-than 14D"
 
 # FULL BACKUP & REMOVE OLDER THAN SETTINGS
 # Because duplicity will continue to add to each backup as you go,
@@ -108,33 +110,26 @@ VERBOSITY="-v3"
 # script or with duplicity.
 #ECHO=$(which echo)
 
+# Allow override those value in a external file, simply put the same
+# variable you would expect on the top of this script in there.
+if [[ -e ~/.dt-cf-backup.conf ]];then
+    source ~/.dt-cf-backup.conf
+fi
+
 ##############################################################
 # Script Happens Below This Line - Shouldn't Require Editing # 
 ##############################################################
 LOGFILE="${LOGDIR}${LOG_FILE}"
 DUPLICITY="$(which duplicity)"
-S3CMD="$(which s3cmd)"
 
-NO_S3CMD="WARNING: s3cmd is not installed, remote file \
-size information unavailable."
-NO_S3CMD_CFG="WARNING: s3cmd is not configured, run 's3cmd --configure' \
-in order to retrieve remote file size information. Remote file \
-size information unavailable."
-README_TXT="In case you've long forgotten, this is a backup script that you used to backup some files (most likely remotely at Amazon S3).  In order to restore these files, you first need to import your GPG private key (if you haven't already).  The key is in this directory and the following command should do the trick:\n\ngpg --allow-secret-key-import --import s3-secret.key.txt\n\nAfter your key as been succesfully imported, you should be able to restore your files.\n\nGood luck!"
+README_TXT="In case you've long forgotten, this is a backup script that you used to backup some files (most likely remotely at Rackspace Cloud Files).  In order to restore these files, you first need to import your GPG private key (if you haven't already).  The key is in this directory and the following command should do the trick:\n\ngpg --allow-secret-key-import --import cf-secret.key.txt\n\nAfter your key as been succesfully imported, you should be able to restore your files.\n\nGood luck!"
 CONFIG_VAR_MSG="Oops!! ${0} was unable to run!\nWe are missing one or more important variables at the top of the script.\nCheck your configuration because it appears that something has not been set yet."
 
 if [ ! -x "$DUPLICITY" ]; then
   echo "ERROR: duplicity not installed, that's gotta happen first!" >&2
   exit 1
-elif  [ `echo ${DEST} | cut -c 1,2` = "s3" ]; then
-  if [ ! -x "$S3CMD" ]; then
-    echo $NO_S3CMD; S3CMD_AVAIL=false
-  elif [ ! -f "${HOME}/.s3cfg" ]; then
-    echo $NO_S3CMD_CFG; S3CMD_AVAIL=false
-  else
-    S3CMD_AVAIL=true
-  fi
 fi
+#TODO: Check python-cloudfiles
 
 if [ ! -d ${LOGDIR} ]; then
   echo "Attempting to create log directory ${LOGDIR} ..."
@@ -151,10 +146,15 @@ elif [ ! -w ${LOGDIR} ]; then
   exit 1
 fi
 
+# Setting ulimit to the max
+ulimit -n 1024
+
 get_source_file_size() 
 {
+  # On non GNU du we cannot reliably get the dir size.
+  du --version 2>/dev/null >/dev/null || return
+  
   echo "---------[ Source File Size Information ]---------" >> ${LOGFILE}
-
   for exclude in ${EXCLIST[@]}; do
     DUEXCLIST="${DUEXCLIST}${exclude}\n"
   done
@@ -169,17 +169,38 @@ get_source_file_size()
   echo >> ${LOGFILE}
 }
 
+get_remote_cf_size()
+{
+python  <<EOF
+import cloudfiles, sys, os
+api_username=os.environ.get("CLOUDFILES_USERNAME", "")
+api_key=os.environ.get("CLOUDFILES_APIKEY", "")
+authurl=os.environ.get("CLOUDFILES_AUTHURL", "https://auth.api.rackspacecloud.com/v1.0")
+container=os.environ.get("DEST", "")
+if not all([api_username, api_key, authurl, container.startswith("cf+http")]):
+    sys.exit(1)
+cnx = cloudfiles.Connection(api_username, api_key, authurl=authurl)
+for x in cnx.list_containers_info():
+    if x['name'] == container.replace("cf+http://", ""): print x['bytes']
+EOF
+}
+
 get_remote_file_size() 
 {
   echo "------[ Destination File Size Information ]------" >> ${LOGFILE}
-  if [ `echo ${DEST} | cut -c 1,2` = "fi" ]; then
+  if [[ $DEST == *file://* ]];then
     TMPDEST=`echo ${DEST} | cut -c 6-` 
     SIZE=`du -hs ${TMPDEST} | awk '{print $1}'`	
-  elif [ `echo ${DEST} | cut -c 1,2` = "s3" ] &&  $S3CMD_AVAIL ; then
-      TMPDEST=$(echo ${DEST} | cut -c 11-)
-      SIZE=`s3cmd du -H s3://${TMPDEST} | awk '{print $1}'`
+    echo "Current Remote Backup File Size: ${SIZE}" >> ${LOGFILE}
+    echo >> ${LOGFILE}
   else
-      SIZE="s3cmd not installed."
+      #TODO:
+      SIZE=$(get_remote_cf_size)
+      if [[ -n ${SIZE} ]];then
+          SIZE="${SIZE} bytes"
+      else
+          SIZE="Error getting information"
+      fi
   fi
   echo "Current Remote Backup File Size: ${SIZE}" >> ${LOGFILE}
   echo >> ${LOGFILE}
@@ -227,8 +248,10 @@ get_file_sizes()
   get_source_file_size
   get_remote_file_size
 
-  sed -i '/-------------------------------------------------/d' ${LOGFILE}
-  chown ${LOG_FILE_OWNER} ${LOGFILE}
+  sed '/-------------------------------------------------/d' ${LOGFILE} > /tmp/.log-tmp && mv /tmp/.log-tmp ${LOGFILE}
+  if [[ ${LOG_FILE_OWNER} != *foobar* ]];then
+      chown ${LOG_FILE_OWNER} ${LOGFILE}
+  fi
 }
 
 backup_this_script()
@@ -239,7 +262,7 @@ backup_this_script()
   else
     SCRIPTPATH=$(which ${0})
   fi
-  TMPDIR=dt-s3-backup-`date +%Y-%m-%d`
+  TMPDIR=dt-cf-backup-`date +%Y-%m-%d`
   TMPFILENAME=${TMPDIR}.tar.gpg
   README=${TMPDIR}/README
   
@@ -257,7 +280,7 @@ backup_this_script()
 
   mkdir -p ${TMPDIR} 
   cp $SCRIPTPATH ${TMPDIR}/ 
-  gpg -a --export-secret-keys ${GPG_KEY} > ${TMPDIR}/s3-secret.key.txt
+  gpg -a --export-secret-keys ${GPG_KEY} > ${TMPDIR}/cf-secret.key.txt
   echo -e ${README_TXT} > ${README}
   echo "Encrypting tarball, choose a password you'll remember..."
   tar c ${TMPDIR} | gpg -aco ${TMPFILENAME}
@@ -270,9 +293,9 @@ backup_this_script()
 
 check_variables ()
 {
-  if [[ ${ROOT} = "" || ${DEST} = "" || ${INCLIST} = "" || \
-        ${AWS_ACCESS_KEY_ID} = "foobar_aws_key_id" || \
-        ${AWS_SECRET_ACCESS_KEY} = "foobar_aws_access_key" || \
+  if [[ ${ROOT} == "" || ${DEST} == "" || ${INCLIST} == "" || \
+        ${CLOUDFILES_USERNAME} == "" || \
+        ${CLOUDFILES_APIKEY} == "" || \
         ${GPG_KEY} = "foobar_gpg_key" || \
         ${PASSPHRASE} = "foobar_gpg_passphrase" ]]; then
     echo -e ${CONFIG_VAR_MSG} 
@@ -281,7 +304,7 @@ check_variables ()
   fi
 }
 
-echo -e "--------    START DT-S3-BACKUP SCRIPT    --------\n" >> ${LOGFILE}
+echo -e "--------    START DT-CF-BACKUP SCRIPT    --------\n" >> ${LOGFILE}
 
 if [ "$1" = "--backup-script" ]; then
   backup_this_script
@@ -417,14 +440,14 @@ else
   "
 fi
 
-echo -e "--------    END DT-S3-BACKUP SCRIPT    --------\n" >> ${LOGFILE}
+echo -e "--------    END DT-CF-BACKUP SCRIPT    --------\n" >> ${LOGFILE}
 
 if [ ${ECHO} ]; then
   echo "TEST RUN ONLY: Check the logfile for command output."
 fi
 
-unset AWS_ACCESS_KEY_ID
-unset AWS_SECRET_ACCESS_KEY
+unset CLOUDFILES_USERNAME
+unset CLOUDFILES_APIKEY
 unset PASSPHRASE
 
 # vim: set tabstop=2 shiftwidth=2 sts=2 autoindent smartindent: 
