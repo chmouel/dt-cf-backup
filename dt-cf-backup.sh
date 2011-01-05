@@ -129,7 +129,11 @@ if [ ! -x "$DUPLICITY" ]; then
   echo "ERROR: duplicity not installed, that's gotta happen first!" >&2
   exit 1
 fi
-#TODO: Check python-cloudfiles
+
+if ! python -c 'import cloudfiles' 2>/dev/null >/dev/null;then
+  echo "ERROR: python-cloudfiles library needs to be install, that's gotta happen first!" >&2
+  exit 1
+fi
 
 if [ ! -d ${LOGDIR} ]; then
   echo "Attempting to create log directory ${LOGDIR} ..."
@@ -194,7 +198,6 @@ get_remote_file_size()
     echo "Current Remote Backup File Size: ${SIZE}" >> ${LOGFILE}
     echo >> ${LOGFILE}
   else
-      #TODO:
       SIZE=$(get_remote_cf_size)
       if [[ -n ${SIZE} ]];then
           SIZE="${SIZE} bytes"
