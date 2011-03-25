@@ -29,7 +29,7 @@ export CLOUDFILES_APIKEY=""
 # By default it use the Rackspace Cloud Files located in the US, you
 # can uncomment the next line to use Rackspace Cloud in UK or specify
 # a custom one if you have a OpenStack swift instance.
-# export CLOUDFILES_AUTHURL=https://lon.auth.api.rackspacecloud.com/
+# export CLOUDFILES_AUTHURL=https://lon.auth.api.rackspacecloud.com/v1.0
 
 # If you aren't running this from a cron, comment this line out
 # and duplicity should prompt you for your password.
