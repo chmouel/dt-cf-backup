@@ -33,6 +33,8 @@ You can use multiple copies of the script with different settings for different
 backup scenarios.  It is designed to run as a cron job and will log information
 to a text file.  Be sure to make the script executable (chmod +x) before you hit the gas.
 
+If you don't want to modify the script directly to manage your preferences (ie: to sync it with the GIT version) you can add your settings directy into the file ``~/.dt-cf-backup.conf`` which would get sourced by the script and override modified settings in the script.
+
 REQUIREMENTS
 ============
 
