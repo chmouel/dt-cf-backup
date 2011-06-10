@@ -304,7 +304,7 @@ backup_this_script()
 
 check_variables ()
 {
-  if [[ ${ROOT} == "" || ${DEST} == "" || ${INCLIST} == "" || \
+  if [[ ${ROOT} == "" || ${DEST} == "" || \
         ${CLOUDFILES_USERNAME} == "" || \
         ${CLOUDFILES_APIKEY} == "" || \
         ${GPG_KEY} = "foobar_gpg_key" || \
