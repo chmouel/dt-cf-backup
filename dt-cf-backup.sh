@@ -182,6 +182,7 @@ get_source_file_size()
 
 get_remote_cf_size()
 {
+    export DEST
 python  <<EOF
 import cloudfiles, sys, os
 api_username=os.environ.get("CLOUDFILES_USERNAME", "")
